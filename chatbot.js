@@ -160,7 +160,7 @@
     <button id="chatbot-btn" title="Chat with us">💬</button>
     <div id="chatbot-window">
       <div id="chatbot-header">
-        <span><span class="dot">${client_name}</span></span>
+        <span><span class="dot"></span>${client_name}</span>
         <button id="chatbot-close" title="Close">×</button>
       </div>
       <div id="chatbot-messages"></div>
