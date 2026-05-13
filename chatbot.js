@@ -2,7 +2,7 @@
   const currentScript = document.currentScript ||
     [...document.querySelectorAll('script')]
     .find(s => s.src.includes('chatbot.js'));
-
+  const client_name = currentScript.dataset.client_name;
   const API_KEY = currentScript.dataset.key;
   const SESSION_ID = parseInt(10000*Math.random())
   const BACKEND_URL = "https://server-vls8.onrender.com/chat";
@@ -160,7 +160,7 @@
     <button id="chatbot-btn" title="Chat with us">💬</button>
     <div id="chatbot-window">
       <div id="chatbot-header">
-        <span><span class="dot"></span> Novena Support</span>
+        <span><span class="dot">${client_name}</span></span>
         <button id="chatbot-close" title="Close">×</button>
       </div>
       <div id="chatbot-messages"></div>
