@@ -36,7 +36,7 @@
       .chatbot-btn {
         position: fixed;
         bottom: 28px;
-        right: 80px;
+        right: 90px;
         width: 56px;
         height: 56px;
         border-radius: 50%;
