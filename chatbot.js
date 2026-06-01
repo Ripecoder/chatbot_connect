@@ -1,20 +1,18 @@
 (function () {
   // ─────────────────────────────────────────────
-  // 1. INSTANCE GUARD (per script tag, not global)
+  // 1. INSTANCE GUARD
   // ─────────────────────────────────────────────
   const script = document.currentScript ||
     Array.from(document.scripts).find(s => s.src?.includes("chatbot.js"));
 
   if (!script) return;
 
-  // prevent duplicate init per script element
   if (script.__chatbot_initialized__) return;
   script.__chatbot_initialized__ = true;
 
   const client_name = script.dataset.client_name;
   const API_KEY = script.dataset.key;
 
-  // FIX: real unique session id
   const SESSION_ID =
     (crypto.randomUUID?.() ||
       `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -22,14 +20,14 @@
   const BACKEND_URL = "https://server-vls8.onrender.com/chat";
 
   // ─────────────────────────────────────────────
-  // 2. CREATE ISOLATED ROOT (NO GLOBAL IDS)
+  // 2. ROOT
   // ─────────────────────────────────────────────
   const root = document.createElement("div");
   root.className = "chatbot-root";
   document.body.appendChild(root);
 
   // ─────────────────────────────────────────────
-  // 3. STYLES (global once, safe)
+  // 3. STYLES (UPDATED: tooltip added)
   // ─────────────────────────────────────────────
   if (!document.getElementById("__chatbot_styles__")) {
     const style = document.createElement("style");
@@ -52,6 +50,28 @@
         align-items: center;
         justify-content: center;
         z-index: 99999;
+      }
+
+      .chatbot-tooltip {
+        position: fixed;
+        bottom: 100px;
+        right: 80px;
+        background: #1a73e8;
+        color: #fff;
+        padding: 7px 10px;
+        border-radius: 10px;
+        font-size: 12px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+        opacity: 0;
+        transform: translateY(8px);
+        transition: 0.2s;
+        pointer-events: none;
+        z-index: 99999;
+      }
+
+      .chatbot-tooltip.show {
+        opacity: 1;
+        transform: translateY(0);
       }
 
       .chatbot-window {
@@ -146,10 +166,11 @@
   }
 
   // ─────────────────────────────────────────────
-  // 4. UI (NO GLOBAL IDS)
+  // 4. UI (UPDATED tooltip added)
   // ─────────────────────────────────────────────
   root.innerHTML = `
     <button class="chatbot-btn">💬</button>
+    <div class="chatbot-tooltip">Want to chat? 💬</div>
 
     <div class="chatbot-window">
       <div class="chatbot-header">
@@ -167,7 +188,7 @@
   `;
 
   // ─────────────────────────────────────────────
-  // 5. LOCAL REFERENCES (SCOPED)
+  // 5. REFERENCES
   // ─────────────────────────────────────────────
   const btn = root.querySelector(".chatbot-btn");
   const win = root.querySelector(".chatbot-window");
@@ -175,9 +196,11 @@
   const messages = root.querySelector(".chatbot-messages");
   const input = root.querySelector("input");
   const sendBtn = root.querySelector(".chatbot-send");
+  const tooltip = root.querySelector(".chatbot-tooltip");
 
   let history = [];
   let open = false;
+  let hasShownWelcome = false;
 
   // ─────────────────────────────────────────────
   // 6. HELPERS
@@ -191,17 +214,40 @@
     return d;
   }
 
-  function toggle() {
-    open = !open;
-    win.classList.toggle("open", open);
-
-    if (open && history.length === 0) {
-      add("I can find 3BHK deals under ₹50k in 30 sec. Want that?", "bot");
+  function updateTooltip() {
+    if (!open && history.length === 0) {
+      tooltip.classList.add("show");
+    } else {
+      tooltip.classList.remove("show");
     }
-
-    if (open) input.focus();
   }
 
+  function openChat() {
+    open = true;
+    win.classList.add("open");
+    tooltip.classList.remove("show");
+
+    if (!hasShownWelcome) {
+      add("I can find 3BHK deals under ₹50k in 30 sec. Want that?", "bot");
+      hasShownWelcome = true;
+    }
+
+    input.focus();
+  }
+
+  function closeChat() {
+    open = false;
+    win.classList.remove("open");
+    updateTooltip();
+  }
+
+  function toggle() {
+    open ? closeChat() : openChat();
+  }
+
+  // ─────────────────────────────────────────────
+  // 7. SEND
+  // ─────────────────────────────────────────────
   async function send() {
     const text = input.value.trim();
     if (!text) return;
@@ -228,9 +274,7 @@
       const data = await res.json().catch(() => ({}));
       typing.remove();
 
-      const reply = data.reply || "No response.";
-      add(reply, "bot");
-      history.push({ role: "assistant", content: reply });
+      add(data.reply || "No response.", "bot");
 
     } catch {
       typing.remove();
@@ -241,13 +285,16 @@
   }
 
   // ─────────────────────────────────────────────
-  // 7. EVENTS
+  // 8. EVENTS
   // ─────────────────────────────────────────────
   btn.onclick = toggle;
-  closeBtn.onclick = toggle;
+  closeBtn.onclick = closeChat;
   sendBtn.onclick = send;
 
   input.addEventListener("keydown", e => {
     if (e.key === "Enter") send();
   });
+
+  // init tooltip
+  updateTooltip();
 })();
