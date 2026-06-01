@@ -1,44 +1,41 @@
 (function () {
   // ─────────────────────────────────────────────
-  // LINE 3: HARD GUARD (prevents double injection)
+  // 1. INSTANCE GUARD (per script tag, not global)
   // ─────────────────────────────────────────────
-  if (window.__CHATBOT_WIDGET_LOADED__) return;
-  window.__CHATBOT_WIDGET_LOADED__ = true;
+  const script = document.currentScript ||
+    Array.from(document.scripts).find(s => s.src?.includes("chatbot.js"));
 
-  // ─────────────────────────────────────────────
-  // LINE 8: SCRIPT RESOLUTION (more reliable)
-  // ─────────────────────────────────────────────
-  const currentScript =
-    document.currentScript ||
-    Array.from(document.scripts).find(s =>
-      s.src && s.src.includes("chatbot.js")
-    );
+  if (!script) return;
 
-  if (!currentScript) {
-    console.error("Chatbot: script tag not found");
-    return;
-  }
+  // prevent duplicate init per script element
+  if (script.__chatbot_initialized__) return;
+  script.__chatbot_initialized__ = true;
 
-  const client_name = currentScript.dataset.client_name;
-  const API_KEY = currentScript.dataset.key;
-  const SESSION_ID = Math.floor(Math.random() * 10000);
+  const client_name = script.dataset.client_name;
+  const API_KEY = script.dataset.key;
+
+  // FIX: real unique session id
+  const SESSION_ID =
+    (crypto.randomUUID?.() ||
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
   const BACKEND_URL = "https://server-vls8.onrender.com/chat";
 
   // ─────────────────────────────────────────────
-  // STATE (isolated per widget instance)
+  // 2. CREATE ISOLATED ROOT (NO GLOBAL IDS)
   // ─────────────────────────────────────────────
-  let conversationHistory = [];
-  let isOpen = false;
+  const root = document.createElement("div");
+  root.className = "chatbot-root";
+  document.body.appendChild(root);
 
   // ─────────────────────────────────────────────
-  // STYLE INJECTION (single injection safe)
+  // 3. STYLES (global once, safe)
   // ─────────────────────────────────────────────
   if (!document.getElementById("__chatbot_styles__")) {
     const style = document.createElement("style");
     style.id = "__chatbot_styles__";
     style.textContent = `
-      #chatbot-btn {
+      .chatbot-btn {
         position: fixed;
         bottom: 28px;
         right: 28px;
@@ -55,11 +52,9 @@
         align-items: center;
         justify-content: center;
         z-index: 99999;
-        transition: background 0.2s, transform 0.2s;
       }
-      #chatbot-btn:hover { background: #1558b0; transform: scale(1.07); }
 
-      #chatbot-window {
+      .chatbot-window {
         position: fixed;
         bottom: 96px;
         right: 28px;
@@ -72,47 +67,29 @@
         flex-direction: column;
         z-index: 99998;
         overflow: hidden;
-        font-family: 'Segoe UI', Arial, sans-serif;
-        transition: opacity 0.2s, transform 0.2s;
+        font-family: Segoe UI, Arial, sans-serif;
         opacity: 0;
         transform: translateY(12px) scale(0.98);
         pointer-events: none;
+        transition: 0.2s;
       }
-      #chatbot-window.open {
+
+      .chatbot-window.open {
         opacity: 1;
         transform: translateY(0) scale(1);
         pointer-events: all;
       }
 
-      #chatbot-header {
+      .chatbot-header {
         background: #1a73e8;
         color: #fff;
         padding: 14px 18px;
-        font-weight: 600;
-        font-size: 15px;
         display: flex;
         justify-content: space-between;
         align-items: center;
       }
 
-      #chatbot-header span { display: flex; gap: 8px; align-items: center; }
-
-      #chatbot-header .dot {
-        width: 9px;
-        height: 9px;
-        background: #4cff91;
-        border-radius: 50%;
-      }
-
-      #chatbot-close {
-        background: none;
-        border: none;
-        color: #fff;
-        font-size: 20px;
-        cursor: pointer;
-      }
-
-      #chatbot-messages {
+      .chatbot-messages {
         flex: 1;
         overflow-y: auto;
         padding: 14px;
@@ -122,182 +99,155 @@
         background: #f4f6fb;
       }
 
-      .cb-msg {
+      .msg {
         max-width: 82%;
         padding: 9px 13px;
         border-radius: 12px;
         font-size: 13.5px;
         line-height: 1.5;
-        word-wrap: break-word;
       }
 
-      .cb-msg.bot {
-        background: #fff;
-        color: #222;
-        align-self: flex-start;
-        border-bottom-left-radius: 3px;
-      }
-
-      .cb-msg.user {
+      .msg.user {
         background: #1a73e8;
         color: #fff;
         align-self: flex-end;
-        border-bottom-right-radius: 3px;
       }
 
-      .cb-msg.typing {
-        color: #888;
-        font-style: italic;
-      }
-
-      #chatbot-input-row {
-        display: flex;
-        padding: 10px 12px;
+      .msg.bot {
         background: #fff;
-        border-top: 1px solid #e8eaf0;
-        gap: 8px;
+        color: #222;
+        align-self: flex-start;
       }
 
-      #chatbot-input {
+      .chatbot-input {
+        display: flex;
+        padding: 10px;
+        border-top: 1px solid #e8eaf0;
+      }
+
+      .chatbot-input input {
         flex: 1;
-        border: 1px solid #dde1ee;
         border-radius: 20px;
         padding: 8px 14px;
-        font-size: 13.5px;
-        outline: none;
+        border: 1px solid #dde1ee;
       }
 
-      #chatbot-input:focus { border-color: #1a73e8; }
-
-      #chatbot-send {
+      .chatbot-send {
+        margin-left: 8px;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
         background: #1a73e8;
         color: #fff;
         border: none;
-        border-radius: 50%;
-        width: 36px;
-        height: 36px;
-        cursor: pointer;
-      }
-
-      #chatbot-send:disabled {
-        background: #a0b4d6;
-        cursor: not-allowed;
       }
     `;
     document.head.appendChild(style);
   }
 
   // ─────────────────────────────────────────────
-  // HTML (idempotent injection)
+  // 4. UI (NO GLOBAL IDS)
   // ─────────────────────────────────────────────
-  if (!document.getElementById("chatbot-window")) {
-    document.body.insertAdjacentHTML("beforeend", `
-      <button id="chatbot-btn">💬</button>
+  root.innerHTML = `
+    <button class="chatbot-btn">💬</button>
 
-      <div id="chatbot-window">
-        <div id="chatbot-header">
-          <span><span class="dot"></span>${client_name}</span>
-          <button id="chatbot-close">×</button>
-        </div>
-
-        <div id="chatbot-messages"></div>
-
-        <div id="chatbot-input-row">
-          <input id="chatbot-input" type="text" placeholder="Type a message…" />
-          <button id="chatbot-send">➤</button>
-        </div>
+    <div class="chatbot-window">
+      <div class="chatbot-header">
+        <span>● ${client_name}</span>
+        <button class="chatbot-close">×</button>
       </div>
-    `);
-  }
+
+      <div class="chatbot-messages"></div>
+
+      <div class="chatbot-input">
+        <input type="text" placeholder="Type..." />
+        <button class="chatbot-send">➤</button>
+      </div>
+    </div>
+  `;
 
   // ─────────────────────────────────────────────
-  // REFERENCES
+  // 5. LOCAL REFERENCES (SCOPED)
   // ─────────────────────────────────────────────
-  const btn = document.getElementById("chatbot-btn");
-  const win = document.getElementById("chatbot-window");
-  const closeBtn = document.getElementById("chatbot-close");
-  const messages = document.getElementById("chatbot-messages");
-  const input = document.getElementById("chatbot-input");
-  const sendBtn = document.getElementById("chatbot-send");
+  const btn = root.querySelector(".chatbot-btn");
+  const win = root.querySelector(".chatbot-window");
+  const closeBtn = root.querySelector(".chatbot-close");
+  const messages = root.querySelector(".chatbot-messages");
+  const input = root.querySelector("input");
+  const sendBtn = root.querySelector(".chatbot-send");
+
+  let history = [];
+  let open = false;
 
   // ─────────────────────────────────────────────
-  // HELPERS
+  // 6. HELPERS
   // ─────────────────────────────────────────────
-  function addMessage(text, role) {
-    const div = document.createElement("div");
-    div.className = `cb-msg ${role}`;
-    div.textContent = text;
-    messages.appendChild(div);
+  function add(text, role) {
+    const d = document.createElement("div");
+    d.className = `msg ${role}`;
+    d.textContent = text;
+    messages.appendChild(d);
     messages.scrollTop = messages.scrollHeight;
-    return div;
+    return d;
   }
 
-  function toggleChat() {
-    isOpen = !isOpen;
-    win.classList.toggle("open", isOpen);
-    btn.textContent = isOpen ? "✕" : "💬";
+  function toggle() {
+    open = !open;
+    win.classList.toggle("open", open);
 
-    if (isOpen && conversationHistory.length === 0) {
-      addMessage(
-        "I can find actual 3BHK deals in Andheri under ₹50k in 30 sec. Want that?",
-        "bot"
-      );
+    if (open && history.length === 0) {
+      add("I can find 3BHK deals under ₹50k in 30 sec. Want that?", "bot");
     }
 
-    if (isOpen) input.focus();
+    if (open) input.focus();
   }
 
-  async function sendMessage() {
+  async function send() {
     const text = input.value.trim();
     if (!text) return;
 
     input.value = "";
     sendBtn.disabled = true;
 
-    addMessage(text, "user");
-    conversationHistory.push({ role: "user", content: text });
+    add(text, "user");
+    history.push({ role: "user", content: text });
 
-    const typing = addMessage("Typing…", "bot typing");
+    const typing = add("Typing…", "bot");
 
     try {
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: conversationHistory,
+          messages: history,
           api_key: API_KEY,
           session_id: SESSION_ID
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       typing.remove();
 
       const reply = data.reply || "No response.";
-      addMessage(reply, "bot");
+      add(reply, "bot");
+      history.push({ role: "assistant", content: reply });
 
-      conversationHistory.push({ role: "assistant", content: reply });
-
-    } catch (e) {
+    } catch {
       typing.remove();
-      addMessage("Server unreachable.", "bot");
+      add("Server unreachable.", "bot");
     } finally {
       sendBtn.disabled = false;
-      input.focus();
     }
   }
 
   // ─────────────────────────────────────────────
-  // EVENTS
+  // 7. EVENTS
   // ─────────────────────────────────────────────
-  btn.addEventListener("click", toggleChat);
-  closeBtn.addEventListener("click", toggleChat);
-  sendBtn.addEventListener("click", sendMessage);
+  btn.onclick = toggle;
+  closeBtn.onclick = toggle;
+  sendBtn.onclick = send;
 
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") send();
   });
 })();
